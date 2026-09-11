@@ -11,7 +11,8 @@ export function resolveApiKey(): string {
 }
 
 export function hasApiKey(): boolean {
-  return resolveApiKey().length > 0;
+  // Return true if client key is configured, or if running in deployed environment
+  return resolveApiKey().length > 0 || typeof window !== "undefined";
 }
 
 function toGenerationError(err: unknown): GenerationError {
@@ -26,7 +27,7 @@ function toGenerationError(err: unknown): GenerationError {
   ) {
     return {
       kind: "invalid_key",
-      message: "Your Gemini API key appears to be invalid. Please verify it in Settings.",
+      message: "Your Gemini API key appears to be invalid. Please verify it in Settings or Netlify.",
     };
   }
   if (lower.includes("429") || lower.includes("quota") || lower.includes("rate limit") || lower.includes("resource_exhausted")) {
@@ -47,6 +48,12 @@ function toGenerationError(err: unknown): GenerationError {
       message: "Please enter a message or question to send to Aether.",
     };
   }
+  if (lower.includes("no gemini_api_key configured")) {
+    return {
+      kind: "missing_key",
+      message: "No Gemini API key found. Add GEMINI_API_KEY to your Netlify Environment Variables or paste one in Settings.",
+    };
+  }
   if (
     lower.includes("network") ||
     lower.includes("fetch") ||
@@ -56,7 +63,7 @@ function toGenerationError(err: unknown): GenerationError {
   ) {
     return {
       kind: "network",
-      message: "Couldn't connect to the Gemini API. Please check your internet connection.",
+      message: "Couldn't connect to the AI service. Please check your internet connection.",
     };
   }
   return {
@@ -67,21 +74,41 @@ function toGenerationError(err: unknown): GenerationError {
 
 /**
  * Validates a Gemini API key by making a lightweight ping request.
+ * Can test client-side key or serverless Netlify function.
  */
-export async function testApiKey(key: string): Promise<{ ok: boolean; error?: string }> {
-  const cleaned = key.trim();
-  if (!cleaned) return { ok: false, error: "API key cannot be empty." };
+export async function testApiKey(key?: string): Promise<{ ok: boolean; error?: string }> {
+  const cleaned = (key || resolveApiKey()).trim();
 
+  // If a key is explicitly provided, test client-side
+  if (cleaned) {
+    try {
+      const ai = new GoogleGenAI({ apiKey: cleaned });
+      const response = await ai.models.generateContent({
+        model: "gemini-3.6-flash",
+        contents: [{ role: "user", parts: [{ text: "ping" }] }],
+      });
+      if (response.text) {
+        return { ok: true };
+      }
+      return { ok: false, error: "Received empty response from Gemini API." };
+    } catch (err) {
+      const genErr = toGenerationError(err);
+      return { ok: false, error: genErr.message };
+    }
+  }
+
+  // Otherwise, test serverless Netlify function
   try {
-    const ai = new GoogleGenAI({ apiKey: cleaned });
-    const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
-      contents: [{ role: "user", parts: [{ text: "ping" }] }],
+    const res = await fetch("/api/gemini", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "test" }),
     });
-    if (response.text) {
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) {
       return { ok: true };
     }
-    return { ok: false, error: "Received empty response from Gemini API." };
+    return { ok: false, error: data.error || "Server function could not reach Gemini API." };
   } catch (err) {
     const genErr = toGenerationError(err);
     return { ok: false, error: genErr.message };
@@ -92,7 +119,6 @@ export async function testApiKey(key: string): Promise<{ ok: boolean; error?: st
  * Splits raw model output into reasoning thoughtProcess and final response content.
  */
 export function extractThoughts(rawText: string): { content: string; thoughtProcess?: string } {
-  // Check for <thought>...</thought> or <think>...</think> tags
   const thoughtMatch = rawText.match(/<(?:thought|think)>([\s\S]*?)<\/(?:thought|think)>/i);
   if (thoughtMatch) {
     const thoughtProcess = thoughtMatch[1].trim();
@@ -100,7 +126,6 @@ export function extractThoughts(rawText: string): { content: string; thoughtProc
     return { content, thoughtProcess };
   }
 
-  // Check if currently streaming inside an unclosed <thought> or <think> tag
   const openTagMatch = rawText.match(/<(?:thought|think)>([\s\S]*)$/i);
   if (openTagMatch) {
     return {
@@ -122,8 +147,9 @@ interface StreamMessageParams {
 }
 
 /**
- * Streams response tokens from Gemini using generateContentStream.
- * Handles both plain text and multimodal image parts.
+ * Streams response tokens from Gemini.
+ * Uses client-side SDK if client key is configured, or proxies through
+ * Netlify serverless function (/api/gemini) when deployed to prevent exposing secrets.
  */
 export async function streamMessage({
   history,
@@ -133,16 +159,7 @@ export async function streamMessage({
   signal,
   onChunk,
 }: StreamMessageParams): Promise<string> {
-  const apiKey = resolveApiKey();
-
-  if (!apiKey) {
-    const err: GenerationError = {
-      kind: "missing_key",
-      message: "No Gemini API key configured. Enter your API key in Settings to start chatting.",
-    };
-    throw err;
-  }
-
+  const clientKey = resolveApiKey();
   const selectedModel = model || storage.getActiveModel() || DEFAULT_GEMINI_MODEL;
   const activeSettings = storage.getSettings();
   const sysInst =
@@ -150,45 +167,43 @@ export async function streamMessage({
     activeSettings.systemInstruction ||
     "You are Aether, an intelligent, calm, and sophisticated AI assistant. Deliver clear, accurate, and insightful responses. Use clean GitHub-flavored Markdown with code blocks, tables, and lists where appropriate.";
 
-  try {
-    const ai = new GoogleGenAI({ apiKey });
+  const validHistory = history.filter(
+    (m) => m.status !== "error" && (m.content?.trim() || (m.attachments && m.attachments.length > 0))
+  );
 
-    // Format conversation history for Gemini API
-    const validHistory = history.filter(
-      (m) => m.status !== "error" && (m.content?.trim() || (m.attachments && m.attachments.length > 0))
-    );
+  if (validHistory.length === 0) {
+    const err: GenerationError = {
+      kind: "unknown",
+      message: "Please enter a message or question to send to Aether.",
+    };
+    throw err;
+  }
 
-    if (validHistory.length === 0) {
-      const err: GenerationError = {
-        kind: "unknown",
-        message: "Please enter a message or question to send to Aether.",
-      };
-      throw err;
-    }
+  // 1. If client key is available (e.g. entered in local settings or .env), use GoogleGenAI directly
+  if (clientKey) {
+    try {
+      const ai = new GoogleGenAI({ apiKey: clientKey });
 
-    const contents = validHistory.map((m) => {
+      const contents = validHistory.map((m) => {
         const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
 
-        // Add attachments (multimodal vision support)
         if (m.attachments && m.attachments.length > 0) {
           for (const att of m.attachments) {
-            if (att.dataUrl.includes(",")) {
-              const base64Data = att.dataUrl.split(",")[1];
+            if (att.dataUrl && att.dataUrl.includes(",")) {
               parts.push({
                 inlineData: {
                   mimeType: att.type || "image/png",
-                  data: base64Data,
+                  data: att.dataUrl.split(",")[1],
                 },
               });
             }
           }
         }
 
-        // Add text prompt
-        if (m.content) {
-          parts.push({ text: m.content });
+        if (m.content && m.content.trim()) {
+          parts.push({ text: m.content.trim() });
         } else if (parts.length === 0) {
-          parts.push({ text: " " });
+          parts.push({ text: "Hello" });
         }
 
         return {
@@ -197,41 +212,92 @@ export async function streamMessage({
         };
       });
 
-    const responseStream = await ai.models.generateContentStream({
-      model: selectedModel,
-      contents,
-      config: {
+      const responseStream = await ai.models.generateContentStream({
+        model: selectedModel,
+        contents,
+        config: {
+          systemInstruction: sysInst,
+          temperature: temperature ?? activeSettings.temperature ?? 0.7,
+          abortSignal: signal,
+        },
+      });
+
+      let fullText = "";
+
+      for await (const chunk of responseStream) {
+        if (signal?.aborted) break;
+        const delta = chunk.text ?? "";
+        fullText += delta;
+        onChunk(fullText, delta);
+      }
+
+      if (!fullText.trim()) {
+        const err: GenerationError = {
+          kind: "empty_response",
+          message: "Gemini returned an empty response. Please try again or rephrase.",
+        };
+        throw err;
+      }
+
+      return fullText;
+    } catch (err) {
+      if ((err as GenerationError).kind) throw err;
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      throw toGenerationError(err);
+    }
+  }
+
+  // 2. Server-side proxy mode: Stream from Netlify serverless function (/api/gemini)
+  try {
+    const res = await fetch("/api/gemini", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        history: validHistory,
+        model: selectedModel,
         systemInstruction: sysInst,
         temperature: temperature ?? activeSettings.temperature ?? 0.7,
-        abortSignal: signal,
-      },
+      }),
+      signal,
     });
 
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(errJson.error || `Server request failed with code ${res.status}`);
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error("Unable to read response stream from server.");
+    }
+
+    const decoder = new TextDecoder();
     let fullText = "";
 
-    for await (const chunk of responseStream) {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
       if (signal?.aborted) break;
-      const delta = chunk.text ?? "";
-      fullText += delta;
-      onChunk(fullText, delta);
+
+      const delta = decoder.decode(value, { stream: true });
+      if (delta) {
+        fullText += delta;
+        onChunk(fullText, delta);
+      }
     }
 
     if (!fullText.trim()) {
       const err: GenerationError = {
         kind: "empty_response",
-        message: "Gemini returned an empty response. Please try again or rephrase.",
+        message: "Gemini returned an empty response. Please try again.",
       };
       throw err;
     }
 
     return fullText;
   } catch (err) {
-    if ((err as GenerationError).kind) {
-      throw err;
-    }
-    if (err instanceof DOMException && err.name === "AbortError") {
-      throw err;
-    }
+    if ((err as GenerationError).kind) throw err;
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
     throw toGenerationError(err);
   }
 }
