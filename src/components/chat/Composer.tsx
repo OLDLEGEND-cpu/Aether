@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, type KeyboardEvent, type ClipboardEvent, type DragEvent } from "react";
-import { ArrowUp, Square, Paperclip, Mic, MicOff, X } from "lucide-react";
+import { ArrowUp, Square, Paperclip, Mic, MicOff, X, Image as ImageIcon, Sparkles } from "lucide-react";
 import { useChat } from "../../context/ChatContext";
 import { useSettings } from "../../context/SettingsContext";
 import type { ChatAttachment } from "../../types/chat";
@@ -30,7 +30,7 @@ export function Composer({ conversationId }: ComposerProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
 
-  const { sendUserMessage, isGenerating, stopGeneration } = useChat();
+  const { sendUserMessage, isGenerating, stopGeneration, currentModel } = useChat();
   const { settings } = useSettings();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -163,9 +163,10 @@ export function Composer({ conversationId }: ComposerProps) {
   };
 
   const nearLimit = value.length > MAX_CHARS * 0.9;
+  const canSubmit = (value.trim().length > 0 || attachments.length > 0) && !isGenerating;
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 pb-4 pt-2 sm:pb-6">
+    <div className="mx-auto w-full max-w-3xl px-3 pb-4 pt-1 sm:px-4 sm:pb-6">
       <div
         onDragOver={(e) => {
           e.preventDefault();
@@ -173,36 +174,50 @@ export function Composer({ conversationId }: ComposerProps) {
         }}
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}
-        className={`flex flex-col gap-1.5 rounded-2xl border px-3.5 py-2.5 transition-all duration-200 focus-within:shadow-md ${
+        className={`composer-container relative flex flex-col gap-2 rounded-2xl px-4 py-3 shadow-md sm:rounded-3xl ${
           isDragOver ? "ring-2 ring-[var(--accent)] border-[var(--accent)]" : ""
         }`}
-        style={{
-          borderColor: "var(--border-strong)",
-          background: "var(--surface)",
-          boxShadow: "var(--shadow-sm)",
-        }}
       >
+        {/* Drag Overlay */}
+        {isDragOver && (
+          <div
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center rounded-2xl bg-[var(--surface)]/95 backdrop-blur-md sm:rounded-3xl"
+            style={{ border: "2px dashed var(--accent)" }}
+          >
+            <ImageIcon size={32} style={{ color: "var(--accent)" }} className="animate-bounce" />
+            <p className="mt-2 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+              Drop images to attach
+            </p>
+          </div>
+        )}
+
         {/* Attachment Previews */}
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 pb-2 pt-1 border-b" style={{ borderColor: "var(--border)" }}>
             {attachments.map((att) => (
               <div
                 key={att.id}
-                className="group relative flex items-center gap-1.5 rounded-xl border p-1 pr-2"
-                style={{ background: "var(--code-bg)", borderColor: "var(--border)" }}
+                className="group relative flex items-center gap-2 rounded-xl border p-1.5 pr-2.5 transition-all shadow-2xs hover:shadow-xs"
+                style={{ background: "var(--code-bg)", borderColor: "var(--border-strong)" }}
               >
                 <img
                   src={att.dataUrl}
                   alt={att.name}
-                  className="h-9 w-9 rounded-lg object-cover"
+                  className="h-10 w-10 rounded-lg object-cover border"
+                  style={{ borderColor: "var(--border)" }}
                 />
-                <span className="max-w-[100px] truncate text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
-                  {att.name}
-                </span>
+                <div className="flex flex-col max-w-[130px]">
+                  <span className="truncate text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
+                    {att.name}
+                  </span>
+                  <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                    {att.size ? `${(att.size / 1024).toFixed(0)} KB` : "Image"}
+                  </span>
+                </div>
                 <button
                   type="button"
                   onClick={() => removeAttachment(att.id)}
-                  className="ml-1 rounded-full p-0.5 hover:bg-black/10 dark:hover:bg-white/10"
+                  className="ml-1 rounded-full p-1 transition-colors hover:bg-black/10 dark:hover:bg-white/10"
                   style={{ color: "var(--text-muted)" }}
                   aria-label="Remove image"
                 >
@@ -213,7 +228,7 @@ export function Composer({ conversationId }: ComposerProps) {
           </div>
         )}
 
-        {/* Text Input */}
+        {/* Text Input Area */}
         <textarea
           ref={textareaRef}
           value={value}
@@ -222,20 +237,20 @@ export function Composer({ conversationId }: ComposerProps) {
           onPaste={handlePaste}
           placeholder={
             isRecording
-              ? "Listening to your voice..."
+              ? "Listening to your voice... Speak now."
               : attachments.length > 0
-              ? "Ask a question about this image..."
-              : "Message Aether… (Paste images or press 🎙️ for voice)"
+              ? "Ask anything about this image..."
+              : "Message Aether… (Drag images or tap 🎙️ for voice)"
           }
           aria-label="Message Aether"
           rows={1}
-          className="composer-textarea max-h-56 min-h-[26px] w-full resize-none bg-transparent text-[15px] leading-relaxed outline-none placeholder:text-[var(--text-muted)]"
+          className="composer-textarea max-h-56 min-h-[30px] w-full resize-none bg-transparent text-[15px] leading-relaxed outline-none placeholder:text-[var(--text-muted)] font-normal"
           style={{ color: "var(--text-primary)" }}
         />
 
         {/* Action Toolbar */}
         <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <input
               type="file"
               ref={fileInputRef}
@@ -250,7 +265,7 @@ export function Composer({ conversationId }: ComposerProps) {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-[var(--code-bg)]"
+              className="flex h-8 w-8 items-center justify-center rounded-xl transition-colors hover:bg-[var(--code-bg)] hover:text-[var(--text-primary)]"
               style={{ color: "var(--text-muted)" }}
               title="Attach image (PNG, JPG, WebP)"
               aria-label="Attach image"
@@ -261,21 +276,40 @@ export function Composer({ conversationId }: ComposerProps) {
             <button
               type="button"
               onClick={toggleRecording}
-              className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
+              className={`flex h-8 items-center gap-1.5 px-2 rounded-xl transition-all ${
                 isRecording
-                  ? "bg-red-500/15 text-red-500 animate-pulse"
-                  : "hover:bg-[var(--code-bg)] text-[var(--text-muted)]"
+                  ? "bg-red-500/15 text-red-500 ring-1 ring-red-500/30 font-medium animate-pulse"
+                  : "hover:bg-[var(--code-bg)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               }`}
-              title={isRecording ? "Stop voice dictation" : "Voice dictation"}
-              aria-label={isRecording ? "Stop voice dictation" : "Voice dictation"}
+              title={isRecording ? "Stop voice recording" : "Voice dictation"}
+              aria-label={isRecording ? "Stop voice recording" : "Voice dictation"}
             >
-              {isRecording ? <MicOff size={17} /> : <Mic size={17} />}
+              {isRecording ? (
+                <>
+                  <MicOff size={16} />
+                  <span className="text-xs">Recording...</span>
+                </>
+              ) : (
+                <Mic size={17} />
+              )}
             </button>
+
+            {/* Model Badge Hint */}
+            <div
+              className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-medium"
+              style={{
+                color: "var(--text-muted)",
+                background: "var(--accent-subtle)",
+              }}
+            >
+              <Sparkles size={11} style={{ color: "var(--accent)" }} />
+              <span>{currentModel.replace("gemini-", "")}</span>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
             <span
-              className="text-[11px] font-mono"
+              className="text-[11px] font-mono select-none"
               style={{
                 color: nearLimit ? "var(--warning)" : "var(--text-muted)",
                 visibility: value.length > 0 ? "visible" : "hidden",
@@ -288,7 +322,7 @@ export function Composer({ conversationId }: ComposerProps) {
               <button
                 type="button"
                 onClick={stopGeneration}
-                className="flex h-8 w-8 items-center justify-center rounded-full transition-transform active:scale-95"
+                className="flex h-8 w-8 items-center justify-center rounded-xl transition-transform active:scale-90 shadow-xs"
                 style={{ background: "var(--text-primary)", color: "var(--bg)" }}
                 aria-label="Stop generating"
                 title="Stop generation"
@@ -299,9 +333,12 @@ export function Composer({ conversationId }: ComposerProps) {
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={!value.trim() && attachments.length === 0}
-                className="flex h-8 w-8 items-center justify-center rounded-full transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30 shadow-sm"
-                style={{ background: "var(--accent)", color: "var(--accent-contrast)" }}
+                disabled={!canSubmit}
+                className="flex h-8 w-8 items-center justify-center rounded-xl transition-all duration-200 active:scale-90 disabled:cursor-not-allowed disabled:opacity-25 shadow-xs hover:shadow-md hover:scale-105"
+                style={{
+                  background: canSubmit ? "var(--accent)" : "var(--surface-subtle)",
+                  color: canSubmit ? "var(--accent-contrast)" : "var(--text-muted)",
+                }}
                 aria-label="Send message"
               >
                 <ArrowUp size={16} strokeWidth={2.5} />
@@ -311,9 +348,9 @@ export function Composer({ conversationId }: ComposerProps) {
         </div>
       </div>
 
-      <div className="mt-2 flex items-center justify-between px-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
-        <span>Aether may produce inaccurate info. Verify important facts.</span>
-        <span className="hidden sm:inline">Shift + Return for new line</span>
+      <div className="mt-2 flex items-center justify-between px-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+        <span>Aether may produce inaccurate info. Verify important details.</span>
+        <span className="hidden sm:inline font-mono">Shift + ↵ for newline</span>
       </div>
     </div>
   );

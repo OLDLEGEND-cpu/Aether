@@ -15,26 +15,30 @@ export function ThemeToggle() {
     <div
       role="radiogroup"
       aria-label="Theme"
-      className="inline-flex items-center gap-0.5 rounded-lg border p-1"
+      className="inline-flex items-center gap-1 rounded-xl border p-1"
       style={{ borderColor: "var(--border)", background: "var(--code-bg)" }}
     >
-      {OPTIONS.map(({ value, icon: Icon, label }) => (
-        <button
-          key={value}
-          role="radio"
-          aria-checked={settings.theme === value}
-          onClick={() => updateSettings({ theme: value })}
-          className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors"
-          style={{
-            background: settings.theme === value ? "var(--surface)" : "transparent",
-            color: settings.theme === value ? "var(--text-primary)" : "var(--text-muted)",
-            boxShadow: settings.theme === value ? "var(--shadow-sm)" : "none",
-          }}
-        >
-          <Icon size={13} />
-          <span className="hidden sm:inline">{label}</span>
-        </button>
-      ))}
+      {OPTIONS.map(({ value, icon: Icon, label }) => {
+        const isActive = settings.theme === value;
+        return (
+          <button
+            key={value}
+            role="radio"
+            aria-checked={isActive}
+            onClick={() => updateSettings({ theme: value })}
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all duration-150 active:scale-95"
+            style={{
+              background: isActive ? "var(--surface)" : "transparent",
+              color: isActive ? "var(--text-primary)" : "var(--text-muted)",
+              boxShadow: isActive ? "var(--shadow-xs)" : "none",
+              border: isActive ? "1px solid var(--border)" : "1px solid transparent",
+            }}
+          >
+            <Icon size={13} style={{ color: isActive ? "var(--accent)" : undefined }} />
+            <span>{label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }

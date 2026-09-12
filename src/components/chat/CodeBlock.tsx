@@ -34,35 +34,60 @@ export function CodeBlock({ className, children }: CodeBlockProps) {
     try {
       await navigator.clipboard.writeText(codeString);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
+      window.setTimeout(() => setCopied(false), 2000);
     } catch {
       // clipboard unavailable
     }
   };
 
   return (
-    <div className="my-1 overflow-hidden rounded-lg">
+    <div className="my-3 overflow-hidden rounded-xl border shadow-xs transition-all" style={{ borderColor: "var(--border-strong)" }}>
+      {/* macOS Style Code Header */}
       <div
-        className="flex items-center justify-between border-b px-3.5 py-1.5"
-        style={{ borderColor: "var(--border)", background: "var(--code-bg)" }}
+        className="flex items-center justify-between border-b px-3.5 py-2 select-none"
+        style={{ borderColor: "var(--border)", background: "var(--surface-subtle)" }}
       >
-        <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-          {language}
-        </span>
+        <div className="flex items-center gap-2">
+          {/* macOS Window Controls */}
+          <div className="flex items-center gap-1.5 mr-1" aria-hidden="true">
+            <span className="h-2.5 w-2.5 rounded-full bg-red-500/75" />
+            <span className="h-2.5 w-2.5 rounded-full bg-amber-500/75" />
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/75" />
+          </div>
+
+          <span
+            className="rounded px-1.5 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider"
+            style={{ color: "var(--text-muted)", background: "var(--code-bg)" }}
+          >
+            {language}
+          </span>
+        </div>
+
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium transition-colors hover:opacity-70"
-          style={{ color: "var(--text-muted)" }}
+          className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium transition-all hover:bg-[var(--surface)] hover:shadow-2xs active:scale-95"
+          style={{ color: "var(--text-secondary)" }}
           aria-label="Copy code"
         >
-          {copied ? <Check size={12} /> : <Copy size={12} />}
-          {copied ? "Copied" : "Copy"}
+          {copied ? (
+            <>
+              <Check size={12} className="text-emerald-500" />
+              <span className="text-emerald-500 font-semibold">Copied</span>
+            </>
+          ) : (
+            <>
+              <Copy size={12} />
+              <span>Copy</span>
+            </>
+          )}
         </button>
       </div>
+
+      {/* Syntax Highlighting Container */}
       <Suspense
         fallback={
           <pre
-            className="m-0 overflow-x-auto px-4 py-3.5 text-[0.825rem]"
+            className="m-0 overflow-x-auto p-4 text-[0.85rem] font-mono leading-relaxed"
             style={{ background: "var(--code-bg)", color: "var(--text-secondary)" }}
           >
             {codeString}
@@ -75,8 +100,10 @@ export function CodeBlock({ className, children }: CodeBlockProps) {
             style={style}
             customStyle={{
               margin: 0,
-              padding: "0.9rem 1rem",
-              fontSize: "0.825rem",
+              padding: "1rem 1.1rem",
+              fontSize: "0.85rem",
+              fontFamily: "var(--font-mono)",
+              lineHeight: "1.65",
               background: "var(--code-bg)",
             }}
             wrapLongLines
