@@ -322,14 +322,17 @@ export function MessageBubble({ message, isLast }: MessageBubbleProps) {
             }`}
           >
             {isUser ? (
-              <button
-                onClick={() => setIsEditing(true)}
-                className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors hover:bg-[var(--code-bg)]"
-                style={{ color: "var(--text-muted)" }}
-                aria-label="Edit message"
-              >
-                <Pencil size={12} /> Edit
-              </button>
+              <div className="flex items-center gap-1">
+                <CopyButton onCopy={handleCopy} />
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors hover:bg-[var(--code-bg)] hover:text-[var(--text-primary)]"
+                  style={{ color: "var(--text-muted)" }}
+                  aria-label="Edit message"
+                >
+                  <Pencil size={12} /> Edit
+                </button>
+              </div>
             ) : (
               <div className="flex items-center gap-1 rounded-xl p-0.5" style={{ background: "transparent" }}>
                 <CopyButton onCopy={handleCopy} />

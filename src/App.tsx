@@ -5,6 +5,7 @@ import { SettingsProvider } from "./context/SettingsContext";
 import { ChatProvider } from "./context/ChatContext";
 import { ToastProvider } from "./context/ToastContext";
 import { AetherLogo } from "./components/common/AetherLogo";
+import { GlobalShortcuts } from "./components/common/GlobalShortcuts";
 
 // Chat is the core experience and loads eagerly; secondary pages are
 // code-split so the initial bundle stays lean.
@@ -37,6 +38,7 @@ export default function App() {
         <ToastProvider>
           <ChatProvider>
             <BrowserRouter>
+              <GlobalShortcuts />
               <Suspense fallback={<RouteFallback />}>
                 <Routes>
                   <Route path="/" element={<Home />} />
